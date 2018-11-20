@@ -47,12 +47,15 @@ flocking(false),
 seeker(false),
 initialize_path(true),
 pathfinder_mult(8),
-need_path(true)
-
+need_path(true),
+attacking(false),
+defending(false)
 {
   gettingSound = false;
   server       = _server;
 }
+
+int RobotPlayer::numAttacking = 0;
 
 /* finds all colored flags in the world that are not the robots own color and stores pointer to them into enemyFlags vector.
  /*
@@ -826,7 +829,7 @@ void            RobotPlayer::evade(float dt)
 }
 
 
-void            RobotPlayer::followPath(float dt)
+void            RobotPlayer::followPath()
 {
   
   float epInit[] = { 0.0, 0.0, 0.0 };
@@ -845,6 +848,42 @@ void            RobotPlayer::followPath(float dt)
   /*End of code modified by Brendan McCabe*/
   
 }
+
+bool		RobotPlayer::isAttacking(float dt)
+{
+  if(attacking){
+    return true;
+  }
+  return false;
+}
+
+void 		RobotPlayer::assignPosition()
+{
+  if(numAttacking < Attackingtanks)
+  {
+    numAttacking++;
+    attacking = true;
+    defending = false;
+  }else{
+    defending = true;
+    attacking = false;
+  }
+}
+
+void 		RobotPlayer::attackFlags(float dt)
+{
+  followPath();
+}
+
+void		RobotPlayer::defendFlag(float dt)
+{
+  float temp[3];
+  temp[0] = World::getWorld()->getBase(getTeam(), 0)[0];
+  temp[1] = World::getWorld()->getBase(getTeam(), 0)[1];
+  
+  endPoint = temp;
+}
+
 /*****end Decision tree action and decision functions added by aidan akamine *******/
 /*******************************************************************************/
 

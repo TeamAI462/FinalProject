@@ -60,7 +60,11 @@ namespace aicore
     /* isInDanger: is the robot about to get shot?*/
     doUpdateMotionDecisions[1].decFuncPtr = &RobotPlayer::isInDanger;
     doUpdateMotionDecisions[1].trueBranch = &doUpdateMotionActions[1];
-    doUpdateMotionDecisions[1].falseBranch = &doUpdateMotionActions[2];
+    doUpdateMotionDecisions[1].falseBranch = &doUpdateMotionDecisions[2];
+    
+    doUpdateMotionDecisions[2].decFuncPtr = &RobotPlayer::isAttacking;
+    doUpdateMotionDecisions[2].trueBranch = &doUpdateMotionActions[2];
+    doUpdateMotionDecisions[2].falseBranch = &doUpdateMotionActions[3];
     
     
     /*******************doUpdate()  shooting decision tree  **********/
@@ -126,7 +130,8 @@ namespace aicore
     
     /*****actions for movement decision tree *********/
     doUpdateMotionActions[1].actFuncPtr = &RobotPlayer::evade;
-    doUpdateMotionActions[2].actFuncPtr = &RobotPlayer::followPath;
+    doUpdateMotionActions[2].actFuncPtr = &RobotPlayer::attackFlags;
+    doUpdateMotionActions[3].actFuncPtr = &RobotPlayer::defendFlag;
     
     /*****actions for shooting decision tree *********/
     
@@ -139,8 +144,8 @@ namespace aicore
     
   }
   
-  DecisionPtr DecisionTrees::doUpdateMotionDecisions[3];
-  ActionPtr DecisionTrees::doUpdateMotionActions[4];
+  DecisionPtr DecisionTrees::doUpdateMotionDecisions[4];
+  ActionPtr DecisionTrees::doUpdateMotionActions[5];
   
   DecisionPtr DecisionTrees::shootingDecisions[7];
   ActionPtr DecisionTrees::shootingActions[3];

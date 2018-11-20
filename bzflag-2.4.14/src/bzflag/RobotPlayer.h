@@ -52,6 +52,10 @@ public:
   Flag*               getTargetFlag();
   void                flock();
   std::vector<Flag*>  enemyFlags;
+  static const int    defendingtanks = 2;
+  static const int    Attackingtanks = 3;
+  static int 	      numAttacking;
+  static int	      numDefending;
   
   //assignment 2 functions
   void                calcCohesion(float* cohesion, const float range, const float modifier);
@@ -73,15 +77,19 @@ public:
   ///************************decision trees************************/
   void		doNothing(float dt);
   bool		amAlive(float dt);
+  void 		assignPosition();
   /* movement decision tree***********************/
   /*choices*/
   bool		isInDanger(float dt);
+  bool		isAttacking(float dt);
   void		evade(float dt);
   const float *	shotVel;
   const float *	shotPos;
   bool		evading;
+  void		attackFlags(float dt);
+  void		defendFlag(float dt);
   /*actions*/
-  void 		followPath(float dt);
+  void 		followPath();
   
   /* shooting decision tree***********************/
   /*choices*/
@@ -152,7 +160,9 @@ private:
   float               pathfinder_mult;
   float               destination[3];
   bool                flag_change;
-  const float* 	endPoint;
+  const float* 	      endPoint;
+  bool		      attacking;
+  bool		      defending;
 };
 
 #endif // BZF_ROBOT_PLAYER_H
