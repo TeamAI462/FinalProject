@@ -861,10 +861,13 @@ void 		RobotPlayer::assignPosition()
 {
   if(numAttacking < Attackingtanks)
   {
+    controlPanel->addMessage("attacking");
+    
     numAttacking++;
     attacking = true;
     defending = false;
   }else{
+    controlPanel->addMessage("evading");
     defending = true;
     attacking = false;
   }
@@ -955,6 +958,7 @@ void			RobotPlayer::doUpdateMotion(float dt)
   if (initialize_path) {
     initialize_path = false;
     initialize_pathfinder();
+    assignPosition();
   }
   aicore::DecisionTreeNode *node = aicore::DecisionTrees::doUpdateMotionDecisions[0].makeDecision(this, dt);
   (this->*(((aicore::ActionPtr*)node)->actFuncPtr))(dt);
