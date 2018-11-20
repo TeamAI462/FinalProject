@@ -46,7 +46,7 @@ flagsFound(0),
 flocking(false),
 seeker(false),
 initialize_path(true),
-pathfinder_mult(8),
+pathfinder_mult(16),
 need_path(true),
 attacking(false),
 defending(false)
