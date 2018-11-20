@@ -883,7 +883,12 @@ void		RobotPlayer::defendFlag(float dt)
   float temp[3];
   temp[0] = World::getWorld()->getBase(getTeam(), 0)[0];
   temp[1] = World::getWorld()->getBase(getTeam(), 0)[1];
-  
+  if(temp[0] > BZDBCache::worldSize / 2 &&
+     (temp[1] < BZDBCache::worldSize / 2) && (temp[1] > -BZDBCache::worldSize / 2)){
+    
+  }else if(temp){
+    
+  }
   endPoint = temp;
 }
 
