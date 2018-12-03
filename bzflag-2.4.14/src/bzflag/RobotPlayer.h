@@ -36,12 +36,12 @@
 
 
 class RobotPlayer : public LocalPlayer {
-public:
+  public:
   RobotPlayer(const PlayerId&,
 	      const char* name, ServerLink*,
 	      const char* _motto);
   
-  /*functions writen by Brendan McCabe*/
+  /*start of functions writen by Brendan McCabe*/
   
   //assignment 1 functions
   void                findEnemyFlags();
@@ -49,6 +49,7 @@ public:
   void                seekFirstFlag();
   void                seekClosestFlag();
   void                seekLeaderFlag();
+  void 		      seekWeakestFlag();
   Flag*               getTargetFlag();
   void                flock();
   std::vector<Flag*>  enemyFlags;
@@ -56,6 +57,7 @@ public:
   static const int    Attackingtanks = 3;
   static int 	      numAttacking;
   static int	      numDefending;
+  static const int    samePositionTimerMax = 400;
   
   //assignment 2 functions
   void                calcCohesion(float* cohesion, const float range, const float modifier);
@@ -71,9 +73,19 @@ public:
   void                initialize_pathfinder();
   void                find_path();
   void                follow_path();
+/*added by aidan akamine*/
+  void		      follow_path_to_position();
+  void		      follow_path_to_unstuck();
+  void		      find_Unstuck_path();
+  void		      find_position_path();
+  void		      setUnstuckDestination();
+  void 		      setPositionToBase();
+  void		      followPathToUnstuck();
+  void		      becomeUnstuck(float dt);
+/*end of lines added by aidan akamine*/
   bool                has_reached();
   
-  
+/*start of decision trees written by aidan akamine
   ///************************decision trees************************/
   void		doNothing(float dt);
   bool		amAlive(float dt);
@@ -86,10 +98,18 @@ public:
   const float *	shotVel;
   const float *	shotPos;
   bool		evading;
+  bool		stuck;
+  int 		unstuck_steps;
+  bool		goToBase;
+  bool		goToMiddle;
+  bool 		isStuck(float dt);
+  bool		isNearBase(float dt);
   void		attackFlags(float dt);
   void		defendFlag(float dt);
+  
   /*actions*/
-  void 		followPath();
+  void 		followPath(float dt);
+  void		goToPosition(float dt);
   
   /* shooting decision tree***********************/
   /*choices*/
@@ -109,9 +129,23 @@ public:
   bool		isFlagSticky(float dt);
   bool		isFlagTeamFlag(float dt);
   bool		holdingMyTeamFlag(float dt);
+  bool		holdingGoodFlag(float dt);
+  bool 		targetFlagWithinRange(float dt);
   /*actions*/
   void		dropFlag(float dt);
+/*end of decision trees written by aidan akamine
   
+/*start of decision tree written by cassandra largosa
+  /* seeking flag decision tree ******************/
+  /**** RobotPlayer.h flag targeting decision tree ****/
+  // choices
+  bool          winning(float dt);
+  bool          equalLoses(float dt);
+  // actions
+  void          targetClosest(float dt);
+  void          targetLeader(float dt);
+  void          targetWeakest(float dt);
+/* end of decision tree written by cassandra largosa
   
   /****************end of functions written by Brendan McCabe**********************/
   
@@ -123,7 +157,7 @@ public:
   void		restart(const float* pos, float azimuth);
   void		explodeTank();
   
-private:
+  private:
   float               flagDistance(const Flag *flag); //added by Brendan McCabe
   void		doUpdate(float dt);
   void		doUpdateMotion(float dt);
@@ -139,7 +173,7 @@ private:
   void		projectPosition(const Player *targ,const float t,float &x,float &y,float &z) const;
   void		getProjectedPosition(const Player *targ, float *projpos) const;
   
-private:
+  private:
   const Player*	target;
   std::vector<RegionPoint>	path;
   int			pathIndex;
@@ -161,8 +195,12 @@ private:
   float               destination[3];
   bool                flag_change;
   const float* 	      endPoint;
+ /*variables added by aidan akamine*/
   bool		      attacking;
   bool		      defending;
+  int		      samePositionTimer;
+  float		      getUnstuckPos[3];
+  float		      moveToPosition[3];
 };
 
 #endif // BZF_ROBOT_PLAYER_H
@@ -174,3 +212,4 @@ private:
 // indent-tabs-mode: t ***
 // End: ***
 // ex: shiftwidth=2 tabstop=8
+

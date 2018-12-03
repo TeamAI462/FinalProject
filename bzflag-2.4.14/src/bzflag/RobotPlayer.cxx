@@ -49,7 +49,12 @@ initialize_path(true),
 pathfinder_mult(8),
 need_path(true),
 attacking(false),
-defending(false)
+defending(false),
+samePositionTimer(0),
+goToBase(true),
+goToMiddle(false),
+stuck(false),
+unstuck_steps(0)
 {
   gettingSound = false;
   server       = _server;
@@ -57,16 +62,25 @@ defending(false)
 
 int RobotPlayer::numAttacking = 0;
 
-/* finds all colored flags in the world that are not the robots own color and stores pointer to them into enemyFlags vector.
- /*
- /* Added by Brendan McCabe
- */
+/*********************************
+ * Code originally writen by Brendan McCabe
+ * edited by cassandra largosa
+ * Added:
+ * Flag* flag;
+ * flag = &world->getFlag(i);
+ * the group of or statements
+ * Changed:
+ * world->getFlag(i) in if statement with flag
+ *********************************/
 void RobotPlayer::findEnemyFlags() {
   bool found = false;
+  Flag* flag;
   World *world = World::getWorld();
   for (int i = 0; i < world->getMaxFlags(); i++) {
-    if (world->getFlag(i).type->flagTeam != getTeam() && world->getFlag(i).type->flagTeam != TeamColor::NoTeam) {
-      enemyFlags.push_back(&(world->getFlag(i)));
+    flag = &world->getFlag(i);
+    if (flag->type->flagTeam != getTeam() && flag->type->flagTeam != TeamColor::NoTeam &&
+	(flag->status == FlagOnGround || flag->status == FlagInAir || flag->status == FlagOnTank)) {
+      enemyFlags.push_back(flag);
       found = true;
     }
     if (found) {
@@ -84,6 +98,8 @@ bool RobotPlayer::hasTargetFlag() {
   bool rValue = false;
   if (targetFlag != NULL) {
     if (targetFlag->type->getColor() == getFlag()->getColor()) {
+      rValue = true;
+    }else if(getFlag()!= NULL && getFlag()->flagTeam != NoTeam && getFlag()->flagTeam != getTeam()){
       rValue = true;
     }
   }
@@ -162,6 +178,38 @@ void RobotPlayer::seekLeaderFlag() {
   targetFlag = leaderFlag;
 }
 
+/*******************************************
+ * Added by Cassandra Largosa
+ *  A modified version of Brendan's seekLeaderFlag
+ * Sets robot's target flag to the flag that has been captured the most
+ *  and is not being carried.
+ *
+ * Add to RobotPlayer.h:
+ * void seekWeakestFlag();
+ ********************************************/
+void RobotPlayer::seekWeakestFlag()
+{
+  Flag* weakestFlag = targetFlag;
+  World* world = World::getWorld();
+  std::multimap<short, int> teamScores;
+  for (int i = 0; i < NumTeams; i++) {
+    Team* team = &(world->getTeam(i));
+    if (team->size > 0) {
+      teamScores.insert(std::make_pair(team->getLosses(), i));
+    }
+  }
+  bool searching = true;
+  for (std::multimap<short, int>::reverse_iterator teamIter = teamScores.rbegin(); teamIter != teamScores.rend() && searching; teamIter++) {
+    for (std::vector<Flag*>::reverse_iterator flagIter = enemyFlags.rbegin(); flagIter != enemyFlags.rend() && searching; flagIter++) {
+      if ((*teamIter).second == (*flagIter)->type->flagTeam && (*flagIter)->status != FlagStatus::FlagOnTank) {
+	weakestFlag = *flagIter;
+	searching = false;
+      }
+    }
+  }
+  targetFlag = weakestFlag;
+}
+
 /* description: This function designates a robot as its team's seeker if there are no human players on
  /*              the team and it has the lowest player id on the team.  A seeker robot captures the flag rather
  /*              than flock
@@ -176,9 +224,9 @@ void RobotPlayer::findseeker() {
   {
     Player *p = 0;
     if (t < World::getWorld()->getCurMaxPlayers())
-      p = World::getWorld()->getPlayer(t);
+    p = World::getWorld()->getPlayer(t);
     else
-      p = LocalPlayer::getMyTank();
+    p = LocalPlayer::getMyTank();
     if (p) {
       if (p->getTeam() == getTeam()) {
 	teamplayers.push_back(t);
@@ -192,7 +240,7 @@ void RobotPlayer::findseeker() {
     seeker = true;
   }
   else
-    seeker = false;
+  seeker = false;
 }
 
 /* description: computes the flocking vector for the flocking ai and then stores it in the object's flock direction
@@ -248,11 +296,11 @@ void RobotPlayer::calcSeperation(float* seperation, const float range, const flo
   {
     Player *p = 0;
     if (t == 0)
-      p = LocalPlayer::getMyTank();
+    p = LocalPlayer::getMyTank();
     else if (t < World::getWorld()->getCurMaxPlayers())
-      p = World::getWorld()->getPlayer(t);
+    p = World::getWorld()->getPlayer(t);
     else
-      p = LocalPlayer::getMyTank();
+    p = LocalPlayer::getMyTank();
     if (     p->getTeam() == team
 	&& range > calcDistance(getPosition(), p->getPosition())
 	&& getId() != p->getId()) {
@@ -283,11 +331,11 @@ void RobotPlayer::calcAlignment(float* align, const float range, const float mod
   {
     Player *p = 0;
     if (t == 0)
-      p = LocalPlayer::getMyTank();
+    p = LocalPlayer::getMyTank();
     else if (t < World::getWorld()->getCurMaxPlayers())
-      p = World::getWorld()->getPlayer(t);
+    p = World::getWorld()->getPlayer(t);
     else
-      p = LocalPlayer::getMyTank();
+    p = LocalPlayer::getMyTank();
     if (p) {
       if (     p->getTeam() == team
 	  && range > calcDistance(getPosition(), p->getPosition())) {
@@ -319,11 +367,11 @@ void RobotPlayer::calcCohesion(float* cohesion, const float range, const float m
   {
     Player *p = 0;
     if (t == 0)
-      p = LocalPlayer::getMyTank();
+    p = LocalPlayer::getMyTank();
     else if (t < World::getWorld()->getCurMaxPlayers())
-      p = World::getWorld()->getPlayer(t);
+    p = World::getWorld()->getPlayer(t);
     else
-      p = LocalPlayer::getMyTank();
+    p = LocalPlayer::getMyTank();
     if (p) {
       if (     p->getTeam() == team
 	  && range > calcDistance(getPosition(), p->getPosition())) {
@@ -436,15 +484,20 @@ void RobotPlayer::find_path() {
 void RobotPlayer::follow_path() {
   float next_coor[3];
   if (!my_path.empty()) {
+    samePositionTimer++;
     next_coor[0] = (my_path.at(0).data()[0] * pathfinder_mult) - BZDBCache::worldSize;
     next_coor[1] = (my_path.at(0).data()[1] * pathfinder_mult) - BZDBCache::worldSize;
     next_coor[2] = (my_path.at(0).data()[2] * pathfinder_mult) - BZDBCache::worldSize;
   }
   if (calcDistance(next_coor, getPosition()) < BZDBCache::tankRadius * 3 && my_path.size() > 1) {
     my_path.erase(my_path.begin());
+    samePositionTimer = 0;
+    
   }
   if (my_path.size() == 1) {
+    samePositionTimer++;
     if (has_reached()) {
+      samePositionTimer = 0;
       my_path.erase(my_path.begin());
     }
     if (hasTargetFlag()) {
@@ -457,15 +510,278 @@ void RobotPlayer::follow_path() {
     }
   }
   else if (!my_path.empty()) {
+    samePositionTimer++;
     destination[0] = (float)(my_path.at(0).data()[0] * pathfinder_mult) - BZDBCache::worldSize;
     destination[1] = (float)(my_path.at(0).data()[1] * pathfinder_mult) - BZDBCache::worldSize;
   }
   else {
+    samePositionTimer = 0;
+    need_path = true;
+    destination[0] = getPosition()[0];
+    destination[1] = getPosition()[1];
+  }
+  if(samePositionTimer > samePositionTimerMax){
+    //std::cout<<"stuck: "<<samePositionTimer<<"\n";
+    
+    samePositionTimer = 0;
+    stuck = true;
+    unstuck_steps = 0;
+    if(goToMiddle){
+      goToBase = true;
+      goToMiddle = false;
+    }else{
+      goToBase = false;
+      goToMiddle = true;
+    }
     need_path = true;
     destination[0] = getPosition()[0];
     destination[1] = getPosition()[1];
   }
   destination[2] = 0;
+}
+
+/*
+ added by aidan akamine
+*/
+
+void RobotPlayer::setUnstuckDestination(){
+  if(goToMiddle){
+    getUnstuckPos[0] = 0.0f;
+    getUnstuckPos[1] = 0.0f;
+  }else{
+    float xpos = getPosition()[0];
+    float ypos = getPosition()[1];
+    
+    if(xpos > (BZDBCache::worldSize / 4)){
+      moveToPosition[0] = BZDBCache::worldSize - 10;
+      moveToPosition[1] = 0.0f;
+      moveToPosition[2] = 0;
+    }else if(xpos < -(BZDBCache::worldSize / 4)){
+      moveToPosition[0] = -BZDBCache::worldSize + 10;
+      moveToPosition[1] = 0.0f;
+      moveToPosition[2] = 0;
+    }else if(ypos > (BZDBCache::worldSize / 4)){
+      moveToPosition[0] = 0.0f;
+      moveToPosition[1] = BZDBCache::worldSize - 10;
+      moveToPosition[2] = 0;
+    }else if(ypos < -(BZDBCache::worldSize / 4)){
+      moveToPosition[0] = 0.0f;
+      moveToPosition[1] = -BZDBCache::worldSize + 10;
+      moveToPosition[2] = 0;
+    }
+    
+    
+    getUnstuckPos[0] = World::getWorld()->getBase(getTeam(), 0)[0];
+    getUnstuckPos[1] = World::getWorld()->getBase(getTeam(), 0)[1];
+  }
+  getUnstuckPos[2] = 0.0f;
+}
+
+/*
+ Function name:	find_path
+ created by brendan mccabe
+ edited by aidan akamine
+ Parameters:     none
+ Return:		none
+ Description:	finds the shortest path to the targeted flag or base through the pathfinder object
+ path is stored in the my_path variable
+ /* Added by Brendan McCabe
+ */
+void RobotPlayer::find_Unstuck_path() {
+  setUnstuckDestination();
+  need_path = false;
+  pathfinder.clear_graph();
+  pathfinder.set_location((int)((getPosition()[0] + BZDBCache::worldSize) / pathfinder_mult), (int)((getPosition()[1] + BZDBCache::worldSize) / pathfinder_mult));
+
+    const float *target_pos = getUnstuckPos;
+    pathfinder.set_target((int)((target_pos[0] + BZDBCache::worldSize) / (int)(pathfinder_mult)), (int)((target_pos[1] + BZDBCache::worldSize)) / (int)(pathfinder_mult));
+  //controlPanel->addMessage(me);
+  pathfinder.set_distances(10, 14);
+  pathfinder.find_path();
+  my_path.clear();
+  MyPathfinder::Cell* path_walker = pathfinder.target;
+  while (path_walker != NULL){
+    std::array<int, 3> next_cell;
+    next_cell[0] = path_walker->position[0];
+    next_cell[1] = path_walker->position[1];
+    next_cell[2] = 0;
+    my_path.insert(my_path.begin(), next_cell);
+    path_walker = path_walker->parent;
+  }
+}
+
+/*
+ Function name:	follow_path_to_unstuck
+ created by brendan mccable
+ edited by aidan akamine
+ Parameters:     none
+ Return:		none
+ Description:	stores location of the next cell in my_path in the destination variable which
+ will be used to tell the robot where to go
+ /* Added by Brendan McCabe
+ */
+void RobotPlayer::follow_path_to_unstuck() {
+  float next_coor[3];
+  if (!my_path.empty()) {
+    samePositionTimer++;
+    next_coor[0] = (my_path.at(0).data()[0] * pathfinder_mult) - BZDBCache::worldSize;
+    next_coor[1] = (my_path.at(0).data()[1] * pathfinder_mult) - BZDBCache::worldSize;
+    next_coor[2] = (my_path.at(0).data()[2] * pathfinder_mult) - BZDBCache::worldSize;
+  }
+  if (calcDistance(next_coor, getPosition()) < BZDBCache::tankRadius * 3 && my_path.size() > 1) {
+    samePositionTimer = 0;
+    unstuck_steps++;
+    my_path.erase(my_path.begin());
+  }
+  if (my_path.size() == 1) {
+    samePositionTimer++;
+    if (calcDistance(getUnstuckPos, getPosition()) < BZDBCache::tankRadius * pathfinder_mult) {
+      samePositionTimer = 0;
+      unstuck_steps++;
+      my_path.erase(my_path.begin());
+    }
+    else {
+      
+      destination[0] = getUnstuckPos[0];
+      destination[1] = getUnstuckPos[1];
+    }
+  }
+  else if (!my_path.empty()) {
+    samePositionTimer++;
+    destination[0] = (float)(my_path.at(0).data()[0] * pathfinder_mult) - BZDBCache::worldSize;
+    destination[1] = (float)(my_path.at(0).data()[1] * pathfinder_mult) - BZDBCache::worldSize;
+  }
+  else {
+    stuck = false;
+    unstuck_steps = 0;
+    need_path = true;
+    destination[0] = getPosition()[0];
+    destination[1] = getPosition()[1];
+    
+  }
+  if(samePositionTimer > samePositionTimerMax){
+    samePositionTimer = 0;
+    unstuck_steps=0;
+    stuck = true;
+    if(goToMiddle){
+      goToBase = true;
+      goToMiddle = false;
+    }else{
+      goToBase = false;
+      goToMiddle = true;
+    }
+    need_path = true;
+    destination[0] = getPosition()[0];
+    destination[1] = getPosition()[1];
+  }
+  if(unstuck_steps > 5){
+    stuck = false;
+    unstuck_steps = 0;
+  }
+  destination[2] = 0;
+}
+
+/*
+ Function name:	follow_path_to_unstuck
+ created by brendan mccable
+ edited by aidan akamine
+ Parameters:     none
+ Return:		none
+ Description:	stores location of the next cell in my_path in the destination variable which
+ will be used to tell the robot where to go
+ /* Added by Brendan McCabe*/
+void RobotPlayer::find_position_path() {
+  need_path = false;
+  pathfinder.clear_graph();
+  pathfinder.set_location((int)((getPosition()[0] + BZDBCache::worldSize) / pathfinder_mult), (int)((getPosition()[1] + BZDBCache::worldSize) / pathfinder_mult));
+  
+  const float *target_pos = moveToPosition;
+  pathfinder.set_target((int)((target_pos[0] + BZDBCache::worldSize) / (int)(pathfinder_mult)), (int)((target_pos[1] + BZDBCache::worldSize)) / (int)(pathfinder_mult));
+  
+  //controlPanel->addMessage(me);
+  pathfinder.set_distances(10, 14);
+  pathfinder.find_path();
+  my_path.clear();
+  MyPathfinder::Cell* path_walker = pathfinder.target;
+  while (path_walker != NULL){
+    std::array<int, 3> next_cell;
+    next_cell[0] = path_walker->position[0];
+    next_cell[1] = path_walker->position[1];
+    next_cell[2] = 0;
+    my_path.insert(my_path.begin(), next_cell);
+    path_walker = path_walker->parent;
+  }
+}
+
+/*
+ Function name:	follow_path_to_position
+ created by brendan mccable
+ edited by aidan akamine
+ Parameters:     none
+ Return:		none
+ Description:	stores location of the next cell in my_path in the destination variable which
+ will be used to tell the robot where to go
+ /* Added by Brendan McCabe
+ */
+void RobotPlayer::follow_path_to_position() {
+  float next_coor[3];
+  if (!my_path.empty()) {
+    samePositionTimer++;
+    next_coor[0] = (my_path.at(0).data()[0] * pathfinder_mult) - BZDBCache::worldSize;
+    next_coor[1] = (my_path.at(0).data()[1] * pathfinder_mult) - BZDBCache::worldSize;
+    next_coor[2] = (my_path.at(0).data()[2] * pathfinder_mult) - BZDBCache::worldSize;
+  }
+  if (calcDistance(next_coor, getPosition()) < BZDBCache::tankRadius * 3 && my_path.size() > 1) {
+    samePositionTimer = 0;
+    my_path.erase(my_path.begin());
+  }
+  if (my_path.size() == 1) {
+    samePositionTimer++;
+    if (calcDistance(getUnstuckPos, getPosition()) < BZDBCache::tankRadius * pathfinder_mult) {
+      samePositionTimer = 0;
+      my_path.erase(my_path.begin());
+    }
+    else {
+      destination[0] = moveToPosition[0];
+      destination[1] = moveToPosition[1];
+    }
+  }
+  else if (!my_path.empty()) {
+    samePositionTimer++;
+    destination[0] = (float)(my_path.at(0).data()[0] * pathfinder_mult) - BZDBCache::worldSize;
+    destination[1] = (float)(my_path.at(0).data()[1] * pathfinder_mult) - BZDBCache::worldSize;
+  }
+  else {
+    stuck = false;
+    unstuck_steps = 0;
+    need_path = true;
+    destination[0] = getPosition()[0];
+    destination[1] = getPosition()[1];
+    
+  }
+  if(samePositionTimer > samePositionTimerMax){
+    samePositionTimer = 0;
+    stuck = true;
+    if(goToMiddle){
+      goToBase = true;
+      goToMiddle = false;
+    }else{
+      goToBase = false;
+      goToMiddle = true;
+    }
+    need_path = true;
+    destination[0] = getPosition()[0];
+    destination[1] = getPosition()[1];
+  }
+  destination[2] = 0;
+}
+
+/*
+ isStuck()
+ added by aidan akamine
+*/
+bool RobotPlayer::isStuck(float dt){
+  return stuck;
 }
 
 /*
@@ -520,7 +836,7 @@ void RobotPlayer::projectPosition(const Player *targ,const float t,float &x,floa
   y=(float)hisy+(float)sy;
   z=(float)hisz+(float)hisvz*t;
   if (targ->getStatus() & PlayerState::Falling)
-    z += 0.5f * BZDBCache::gravity * t * t;
+  z += 0.5f * BZDBCache::gravity * t * t;
   if (z < 0) z = 0;
 }
 
@@ -552,23 +868,23 @@ bool            RobotPlayer::isInDanger(float dt)
   {
     Player *p = 0;
     if (t < World::getWorld()->getCurMaxPlayers())
-      p = World::getWorld()->getPlayer(t);
+    p = World::getWorld()->getPlayer(t);
     else
-      p = LocalPlayer::getMyTank();
+    p = LocalPlayer::getMyTank();
     if (!p || p->getId() == getId())
-      continue;
+    continue;
     const int maxShots = p->getMaxShots();
     for (int s = 0; s < maxShots; s++) {
       ShotPath* shot = p->getShot(s);
       if (!shot || shot->isExpired())
-	continue;
+      continue;
       // ignore invisible bullets completely for now (even when visible)
       if (shot->getFlag() == Flags::InvisibleBullet)
-	return false;
+      return false;
       const float* position = getPosition();
       shotPos = shot->getPosition();
       if ((fabs(shotPos[2] - position[2]) > BZDBCache::tankHeight) && (shot->getFlag() != Flags::GuidedMissile))
-	continue;
+      continue;
       const float dist = TargetingUtils::getTargetDistance(position, shotPos);
       if (dist < 150.0f) {
 	shotVel = shot->getVelocity();
@@ -629,13 +945,13 @@ bool            RobotPlayer::shotWithinHalfTankLenght(float dt)
   const float* p2 = getPosition();
   shootingAngle = atan2f(p1[1] - p2[1], p1[0] - p2[0]);
   if (shootingAngle < 0.0f)
-    shootingAngle += (float)(2.0 * M_PI);
+  shootingAngle += (float)(2.0 * M_PI);
   float azimuthDiff   = shootingAngle - azimuth;
   if (azimuthDiff > M_PI)
-    azimuthDiff -= (float)(2.0 * M_PI);
+  azimuthDiff -= (float)(2.0 * M_PI);
   else
-    if (azimuthDiff < -M_PI)
-      azimuthDiff += (float)(2.0 * M_PI);
+  if (azimuthDiff < -M_PI)
+  azimuthDiff += (float)(2.0 * M_PI);
   
   const float targetdistance = hypotf(p1[0] - p2[0], p1[1] - p2[1]) -
   BZDB.eval(StateDatabase::BZDB_MUZZLEFRONT) - tankRadius;
@@ -688,9 +1004,9 @@ bool            RobotPlayer::WillShotHitTeammate(float dt)
   {
     Player *p = 0;
     if (i < World::getWorld()->getCurMaxPlayers())
-      p = World::getWorld()->getPlayer(i);
+    p = World::getWorld()->getPlayer(i);
     else
-      p = LocalPlayer::getMyTank();
+    p = LocalPlayer::getMyTank();
     
     if (!p || p->getId() == getId() || validTeamTarget(p) ||
 	!p->isAlive()) continue;
@@ -754,6 +1070,29 @@ bool             RobotPlayer::holdingMyTeamFlag(float dt)
   return false;
 }
 
+/******************************* check if tank is holding good flag *******************************************/
+/******************************* check if tank is holding good flag *******************************************/
+bool             RobotPlayer::holdingGoodFlag(float dt)
+{
+  if(this->getFlag()->flagQuality == FlagQuality::FlagGood){
+    if(this->getFlag()->flagAbbv == "SR" ||
+       this->getFlag()->flagAbbv == "TH" ||
+       this->getFlag()->flagAbbv == "US" ){
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+/******************************* check how close tank is to enemy flag *******************************************/
+/******************************* check how close tank is to enemy flag *******************************************/
+bool		RobotPlayer::targetFlagWithinRange(float dt){
+  if(calcDistance(targetFlag->position, getPosition()) < 100){
+    return true;
+  }
+  return false;
+}
 
 
 /******************************* drop flag *******************************************/
@@ -763,14 +1102,6 @@ void             RobotPlayer::dropFlag(float dt)
   serverLink->sendDropFlag(getId(), getPosition());
 }
 
-/*
- if(this->getFlag()->flagTeam == getTeam()){
- serverLink->sendDropFlag(getId(), position);
- } else if (this->getFlag()->flagTeam == TeamColor::NoTeam){
- if(this->getFlag()->endurance != FlagSticky){
- serverLink->sendDropFlag(getId(), position);
- }
- }*/
 
 /******************************* tank is firing shot *******************************************/
 /******************************* tank is firing shot *******************************************/
@@ -818,9 +1149,9 @@ void            RobotPlayer::evade(float dt)
     if (rotation2 > 1.0f * M_PI) rotation2 -= (float)(2.0 * M_PI);
     
     if (fabs(rotation1) < fabs(rotation2))
-      rotation = rotation1;
+    rotation = rotation1;
     else
-      rotation = rotation2;
+    rotation = rotation2;
     setDesiredSpeed(1.0f);
     setDesiredAngVel(rotation);
     evading = true;
@@ -828,17 +1159,33 @@ void            RobotPlayer::evade(float dt)
   
 }
 
-
-void            RobotPlayer::followPath()
+/****************************************
+ * Code originally writen by Brendan McCabe
+ * edited by cassandra largosa
+ * Changed:
+ * flagsFound -> sizeof(World::getWorld()->getTeams()) != sizeof(enemyFlags)
+ *   Should resolve issue with seeking flag that doen't exist and
+ *   ensure that all existing flags can be seeked.
+ * seekClosestFlag -> call to decision tree
+ * Added:
+ * Check to see if tank grabbed target flag before choosing a new one.
+ *
+ * In RobotPlayer.h change:
+ * void followPath(); -> void followPath(float dt)
+ *****************************************/
+void            RobotPlayer::followPath(float dt)
 {
   
   float epInit[] = { 0.0, 0.0, 0.0 };
   endPoint = epInit;
   //findseeker();
-  if (!flagsFound) {
+  if (sizeof(World::getWorld()->getTeams()) != sizeof(enemyFlags)) {
     findEnemyFlags();
   }
-  seekClosestFlag();
+  if (!hasTargetFlag()) {
+    aicore::DecisionTreeNode *node = aicore::DecisionTrees::targetFlagDecisions[0].makeDecision(this, dt);
+    (this->*(((aicore::ActionPtr*)node)->actFuncPtr))(dt);
+  }
   
   if (need_path) {
     find_path();
@@ -849,6 +1196,54 @@ void            RobotPlayer::followPath()
   
 }
 
+/****************************************
+ * Code originally writen by Brendan McCabe
+ * edited by aidan akamine
+ *****************************************/
+void            RobotPlayer::followPathToUnstuck()
+{
+  
+  float epInit[] = { 0.0, 0.0, 0.0 };
+  endPoint = epInit;
+  //findseeker();
+
+  if (need_path) {
+    find_Unstuck_path();
+  }
+  follow_path_to_unstuck();
+  endPoint = destination;
+  /*End of code modified by Brendan McCabe*/
+  
+}
+
+/****************************************
+ * Code originally writen by Brendan McCabe
+ * edited by aidan akamine
+ *****************************************/
+void 		RobotPlayer::goToPosition(float dt)
+{
+  setPositionToBase();
+  float epInit[] = { 0.0, 0.0, 0.0 };
+  endPoint = epInit;
+  if (need_path) {
+    find_position_path();
+  }
+  follow_path_to_position();
+  endPoint = destination;
+}
+
+void RobotPlayer::setPositionToBase(){
+  moveToPosition[0] = World::getWorld()->getBase(getTeam(), 0)[0];
+  moveToPosition[1] = World::getWorld()->getBase(getTeam(), 0)[1];
+  moveToPosition[2] = 0.0f;
+}
+
+/*added by aidan akamine*/
+void RobotPlayer::becomeUnstuck(float dt){
+  followPathToUnstuck();
+}
+
+/*added by aidan akamine*/
 bool		RobotPlayer::isAttacking(float dt)
 {
   if(attacking){
@@ -857,27 +1252,31 @@ bool		RobotPlayer::isAttacking(float dt)
   return false;
 }
 
+/*added by aidan akamine*/
 void 		RobotPlayer::assignPosition()
 {
   if(numAttacking < Attackingtanks)
   {
     controlPanel->addMessage("attacking");
-    
-    numAttacking++;
+    numAttacking = (numAttacking + 1)%5;
+    //numAttacking++;
     attacking = true;
     defending = false;
   }else{
     controlPanel->addMessage("evading");
+    numAttacking = (numAttacking + 1)%5;
     defending = true;
     attacking = false;
   }
 }
 
+/*added by aidan akamine*/
 void 		RobotPlayer::attackFlags(float dt)
 {
-  followPath();
+  followPath(dt);
 }
 
+/*added by aidan akamine*/
 void		RobotPlayer::defendFlag(float dt)
 {
   float temp[3];
@@ -892,9 +1291,97 @@ void		RobotPlayer::defendFlag(float dt)
   endPoint = temp;
 }
 
+/*added by aidan akamine*/
+
+bool	RobotPlayer::isNearBase(float dt){
+  if(calcDistance(World::getWorld()->getBase(getTeam(), 0), getPosition()) < 10){
+    return true;
+  }
+  need_path = true;
+  return false;
+}
+
 /*****end Decision tree action and decision functions added by aidan akamine *******/
 /*******************************************************************************/
 
+/**** RobotPlayer.cxx flag targeting decision tree ****/
+// Checks if tank's team has the highest score
+//added by cassandra largosa
+bool RobotPlayer::winning(float dt)
+{
+  World* world = World::getWorld();
+  short highestScore = 0;
+  short teamScore = 0;
+  
+  for (int i = 0; i < NumTeams; i++) {
+    Team* team = &(world->getTeam(i));
+    if (team->size > 0) {
+      short score = team->getWins() - team->getLosses();
+      if (score > highestScore) {
+	highestScore = score;
+      }
+      if (team->isColorTeam(getTeam())) {
+	teamScore = score;
+      }
+    }
+  }
+  if (teamScore < highestScore) {
+    return false;
+  }
+  else {
+    return true;
+  }
+}
+
+// Checks if enemy teams have had their flag captured an equal number of times
+//added by cassandra largosa
+bool RobotPlayer::equalLoses(float dt)
+{
+  World* world = World::getWorld();
+  short loses = 0;
+  bool foundLoses = false;
+  
+  for (int i = 0; i < NumTeams; i++) {
+    Team* team = &(world->getTeam(i));
+    if (team->size > 0) {
+      short temp = team->getLosses();
+      for (std::vector<Flag*>::reverse_iterator flagIter = enemyFlags.rbegin(); flagIter != enemyFlags.rend(); flagIter++) {
+	if (i == (*flagIter)->type->flagTeam) {
+	  if (foundLoses && loses != temp) {
+	    return false;
+	  }
+	  else {
+	    foundLoses = true;
+	    loses = temp;
+	  }
+	}
+      }
+    }
+  }
+  
+  return true;
+}
+
+// seeks the flag closest to this tank
+//added by cassandra largosa
+void RobotPlayer::targetClosest(float dt)
+{
+  seekClosestFlag();
+}
+
+// seeks the flag of the team with the highest score
+//added by cassandra largosa
+void RobotPlayer::targetLeader(float dt)
+{
+  seekLeaderFlag();
+}
+
+// seeks the flag that is the easiest to capture
+//added by cassandra largosa
+void RobotPlayer::targetWeakest(float dt)
+{
+  seekWeakestFlag();
+}
 
 // get coordinates to aim at when shooting a player; steps:
 // 1. estimate how long it will take shot to hit target
@@ -995,7 +1482,7 @@ void			RobotPlayer::doUpdateMotion(float dt)
       float tankRadius = BZDBCache::tankRadius;
       // smooth path a little by turning early at corners, might get us stuck, though
       if (distance <= 2.5f * tankRadius)
-	pathIndex++;
+      pathIndex++;
       
       float segmentAzimuth = atan2f(v[1], v[0]);
       float azimuthDiff = segmentAzimuth - azimuth;
@@ -1004,9 +1491,9 @@ void			RobotPlayer::doUpdateMotion(float dt)
       if (fabs(azimuthDiff) > 0.01f) {
 	// drive backward when target is behind, try to stick to last direction
 	if (drivingForward)
-	  drivingForward = fabs(azimuthDiff) < M_PI/2*0.9 ? true : false;
+	drivingForward = fabs(azimuthDiff) < M_PI/2*0.9 ? true : false;
 	else
-	  drivingForward = fabs(azimuthDiff) < M_PI/2*0.3 ? true : false;
+	drivingForward = fabs(azimuthDiff) < M_PI/2*0.3 ? true : false;
 	setDesiredSpeed(drivingForward ? 1.0f : -1.0f);
 	// set desired turn speed
 	if (azimuthDiff >= dt * tankAngVel) {
@@ -1044,6 +1531,11 @@ void			RobotPlayer::explodeTank()
   target = NULL;
   need_path = true;
   path.clear();
+  samePositionTimer = 0;
+  stuck = false;
+  goToBase = true;
+  goToMiddle = false;
+  unstuck_steps = 0;
 }
 
 void			RobotPlayer::restart(const float* pos, float _azimuth)
@@ -1054,6 +1546,8 @@ void			RobotPlayer::restart(const float* pos, float _azimuth)
   target = NULL;
   need_path = true;
   pathIndex = 0;
+  stuck = false;
+  unstuck_steps = 0;
   
 }
 
@@ -1062,7 +1556,7 @@ float			RobotPlayer::getTargetPriority(const
 {
   // don't target teammates or myself
   if (!this->validTeamTarget(_target))
-    return 0.0f;
+  return 0.0f;
   
   // go after closest player
   // FIXME -- this is a pretty stupid heuristic
@@ -1073,13 +1567,13 @@ float			RobotPlayer::getTargetPriority(const
   float basePriority = 1.0f;
   // give bonus to non-paused player
   if (!_target->isPaused())
-    basePriority += 2.0f;
+  basePriority += 2.0f;
   // give bonus to non-deadzone targets
   if (obstacleList) {
     float nearest[2];
     const BzfRegion* targetRegion = findRegion (p2, nearest);
     if (targetRegion && targetRegion->isInside(p2))
-      basePriority += 1.0f;
+    basePriority += 1.0f;
   }
   return basePriority
   - 0.5f * hypotf(p2[0] - p1[0], p2[1] - p1[1]) / worldSize;
@@ -1123,7 +1617,7 @@ void			RobotPlayer::setTarget(const Player* _target)
   queue.insert(headRegion, 0.0f);
   BzfRegion* next;
   while (!queue.isEmpty() && (next = queue.remove()) != tailRegion)
-    findPath(queue, next, tailRegion, q2, mailbox);
+  findPath(queue, next, tailRegion, q2, mailbox);
   
   // get list of points to go through to reach the target
   next = tailRegion;
@@ -1133,9 +1627,9 @@ void			RobotPlayer::setTarget(const Player* _target)
     next = next->getTarget();
   } while (next && next != headRegion);
   if (next || tailRegion == headRegion)
-    path.push_back(q1);
+  path.push_back(q1);
   else
-    path.clear();
+  path.clear();
   pathIndex = 0;
 }
 
@@ -1146,8 +1640,8 @@ BzfRegion*		RobotPlayer::findRegion(const float p[2],
   nearest[1] = p[1];
   const int count = obstacleList->size();
   for (int o = 0; o < count; o++)
-    if ((*obstacleList)[o]->isInside(p))
-      return (*obstacleList)[o];
+  if ((*obstacleList)[o]->isInside(p))
+  return (*obstacleList)[o];
   
   // point is outside: find nearest region
   float      distance      = maxDistance;
@@ -1183,9 +1677,9 @@ float			RobotPlayer::getRegionExitPoint(
     // compute intersection along (p1,d) with (a,b)
     t = (a[0] * b[1] - a[1] * b[0] - p1[0] * b[1] + p1[1] * b[0]) / vect;
     if (t > 1.0f)
-      t = 1.0f;
+    t = 1.0f;
     else if (t < 0.0f)
-      t = 0.0f;
+    t = 0.0f;
   }
   
   mid[0] = p1[0] + t * d[0];
@@ -1216,7 +1710,7 @@ void			RobotPlayer::findPath(RegionPriorityQueue& queue,
 				     targetPoint, mid, priority);
     priority += region->getDistance();
     if (neighbor == targetRegion)
-      total += hypotf(targetPoint[0] - mid[0], targetPoint[1] - mid[1]);
+    total += hypotf(targetPoint[0] - mid[0], targetPoint[1] - mid[1]);
     total += region->getDistance();
     if (neighbor->test(mailbox) || total < neighbor->getDistance()) {
       neighbor->setPathStuff(total, region, mid, mailbox);
@@ -1233,3 +1727,4 @@ void			RobotPlayer::findPath(RegionPriorityQueue& queue,
 // indent-tabs-mode: t ***
 // End: ***
 // ex: shiftwidth=2 tabstop=8
+

@@ -51,7 +51,7 @@ namespace aicore
   void DecisionTrees::init()
   {
     /*start of lines modified by aidan akamine */
-    /*******************doUpdateMotion(): evade or follow a*star search decision tree **********/
+  /*******************doUpdateMotion(): evade or follow a*star search decision tree **********/
     /* amAlive: is robot alive?  */
     doUpdateMotionDecisions[0].decFuncPtr = &RobotPlayer::amAlive;
     doUpdateMotionDecisions[0].trueBranch = &doUpdateMotionDecisions[1];
@@ -62,12 +62,20 @@ namespace aicore
     doUpdateMotionDecisions[1].trueBranch = &doUpdateMotionActions[1];
     doUpdateMotionDecisions[1].falseBranch = &doUpdateMotionDecisions[2];
     
-    doUpdateMotionDecisions[2].decFuncPtr = &RobotPlayer::isAttacking;
-    doUpdateMotionDecisions[2].trueBranch = &doUpdateMotionActions[2];
-    doUpdateMotionDecisions[2].falseBranch = &doUpdateMotionActions[3];
+    doUpdateMotionDecisions[2].decFuncPtr = &RobotPlayer::isStuck;
+    doUpdateMotionDecisions[2].trueBranch = &doUpdateMotionActions[4];
+    doUpdateMotionDecisions[2].falseBranch = &doUpdateMotionDecisions[3];
+    
+    doUpdateMotionDecisions[3].decFuncPtr = &RobotPlayer::isAttacking;
+    doUpdateMotionDecisions[3].trueBranch = &doUpdateMotionActions[2];
+    doUpdateMotionDecisions[3].falseBranch = &doUpdateMotionDecisions[4];
+    
+    doUpdateMotionDecisions[4].decFuncPtr = &RobotPlayer::isNearBase;
+    doUpdateMotionDecisions[4].trueBranch = &doUpdateMotionActions[3];
+    doUpdateMotionDecisions[4].falseBranch = &doUpdateMotionActions[5];
     
     
-    /*******************doUpdate()  shooting decision tree  **********/
+  /*******************doUpdate()  shooting decision tree  **********/
     /* amAlive: is robot alive?  */
     shootingDecisions[0].decFuncPtr = &RobotPlayer::amAlive;
     shootingDecisions[0].trueBranch = &shootingDecisions[1];
@@ -98,7 +106,7 @@ namespace aicore
     shootingDecisions[5].trueBranch = &shootingActions[0];
     shootingDecisions[5].falseBranch = &shootingActions[1];
     
-    /*********************doUpdate() decision tree on whether or not to drop flag *******/
+  /*********************doUpdate() decision tree on whether or not to drop flag *******/
     /* amAlive: is robot alive?  */
     holdingFlagDecisions[0].decFuncPtr = &RobotPlayer::amAlive;
     holdingFlagDecisions[0].trueBranch = &holdingFlagDecisions[1];
@@ -117,13 +125,53 @@ namespace aicore
     /*isFlagTeamFlag: is the flag the tank is holding a team flag? */
     holdingFlagDecisions[3].decFuncPtr = &RobotPlayer::isFlagTeamFlag;
     holdingFlagDecisions[3].trueBranch = &holdingFlagDecisions[4];
-    holdingFlagDecisions[3].falseBranch = &holdingFlagActions[0];
+    holdingFlagDecisions[3].falseBranch = &holdingFlagDecisions[6];
     
     /*holdingMyTeamFlag: is the flag the tank is holding its own teamflag?*/
     holdingFlagDecisions[4].decFuncPtr = &RobotPlayer::holdingMyTeamFlag;
-    holdingFlagDecisions[4].trueBranch = &holdingFlagActions[0];
+    holdingFlagDecisions[4].trueBranch = &holdingFlagDecisions[5];
     holdingFlagDecisions[4].falseBranch = &doUpdateMotionActions[0];
     
+    holdingFlagDecisions[5].decFuncPtr = &RobotPlayer::isAttacking;
+    holdingFlagDecisions[5].trueBranch = &holdingFlagActions[0];
+    holdingFlagDecisions[5].falseBranch = &doUpdateMotionActions[0];
+    
+    holdingFlagDecisions[6].decFuncPtr = &RobotPlayer::holdingGoodFlag;
+    holdingFlagDecisions[6].trueBranch = &holdingFlagDecisions[7];
+    holdingFlagDecisions[6].falseBranch = &holdingFlagActions[0];
+    
+    holdingFlagDecisions[7].decFuncPtr = &RobotPlayer::isAttacking;
+    holdingFlagDecisions[7].trueBranch = &holdingFlagDecisions[8];
+    holdingFlagDecisions[7].falseBranch = &doUpdateMotionActions[0];
+    
+    holdingFlagDecisions[8].decFuncPtr = &RobotPlayer::targetFlagWithinRange;
+    holdingFlagDecisions[8].trueBranch = &holdingFlagActions[0];
+    holdingFlagDecisions[8].falseBranch = &doUpdateMotionActions[0];
+    
+  /******* decision tree on which enemy flags to target *****************/
+  //added by cassandra largosa
+    
+    /**** dectree.cxx flag targeting decision tree ****/
+    /* amAlive: is robot alive?  */
+    targetFlagDecisions[0].decFuncPtr = &RobotPlayer::amAlive;
+    targetFlagDecisions[0].trueBranch = &targetFlagDecisions[1];
+    targetFlagDecisions[0].falseBranch = &doUpdateMotionActions[0];
+    
+    /* winning: is robot's team winning? */
+    targetFlagDecisions[1].decFuncPtr = &RobotPlayer::winning;
+    targetFlagDecisions[1].trueBranch = &targetFlagDecisions[2];
+    targetFlagDecisions[1].falseBranch = &targetFlagActions[1];
+    
+    /* equalLoses: have the enemy teams had their flag captured an equal number of times? */
+    targetFlagDecisions[2].decFuncPtr = &RobotPlayer::equalLoses;
+    targetFlagDecisions[2].trueBranch = &targetFlagActions[0];
+    targetFlagDecisions[2].falseBranch = &targetFlagActions[2];
+    
+    targetFlagActions[0].actFuncPtr = &RobotPlayer::targetClosest;
+    targetFlagActions[1].actFuncPtr = &RobotPlayer::targetLeader;
+    targetFlagActions[2].actFuncPtr = &RobotPlayer::targetWeakest;
+
+  /*end of lines added by cassandra largosa*/
     
     /***** general actions  *********/
     doUpdateMotionActions[0].actFuncPtr = &RobotPlayer::doNothing;
@@ -132,6 +180,8 @@ namespace aicore
     doUpdateMotionActions[1].actFuncPtr = &RobotPlayer::evade;
     doUpdateMotionActions[2].actFuncPtr = &RobotPlayer::attackFlags;
     doUpdateMotionActions[3].actFuncPtr = &RobotPlayer::defendFlag;
+    doUpdateMotionActions[4].actFuncPtr = &RobotPlayer::becomeUnstuck;
+    doUpdateMotionActions[5].actFuncPtr = &RobotPlayer::goToPosition;
     
     /*****actions for shooting decision tree *********/
     
@@ -144,14 +194,19 @@ namespace aicore
     
   }
   
-  DecisionPtr DecisionTrees::doUpdateMotionDecisions[4];
-  ActionPtr DecisionTrees::doUpdateMotionActions[5];
+  DecisionPtr DecisionTrees::doUpdateMotionDecisions[5];
+  ActionPtr DecisionTrees::doUpdateMotionActions[6];
   
   DecisionPtr DecisionTrees::shootingDecisions[7];
   ActionPtr DecisionTrees::shootingActions[3];
   
-  DecisionPtr DecisionTrees::holdingFlagDecisions[6];
+  DecisionPtr DecisionTrees::holdingFlagDecisions[9];
   ActionPtr DecisionTrees::holdingFlagActions[2];
+  
+/*lines added by cassandra largosa*/
+  DecisionPtr DecisionTrees::targetFlagDecisions[3];
+  ActionPtr DecisionTrees::targetFlagActions[3];
+/*end of lines added by cassandra largosa*/
   
   /*end of lines modified by aidan akamine*/
 }; // end of namespace

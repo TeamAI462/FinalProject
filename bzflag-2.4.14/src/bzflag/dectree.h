@@ -34,7 +34,7 @@ namespace aicore
    */
   class DecisionTreeNode
   {
-  public:
+    public:
     /**
      * The make decision method carries out a decision making
      * process and returns the new decision tree node that we've
@@ -49,7 +49,7 @@ namespace aicore
    */
   class DecisionTreeAction : public DecisionTreeNode
   {
-  public:
+    public:
     /**
      * Makes the decision - in  this case there is no decision, so
      * this method returns the action back again..
@@ -67,7 +67,7 @@ namespace aicore
    */
   class Decision : public DecisionTreeNode
   {
-  public:
+    public:
     DecisionTreeNode* trueBranch;
     DecisionTreeNode* falseBranch;
     
@@ -90,7 +90,7 @@ namespace aicore
    */
   class DecisionPtr : public aicore::Decision
   {
-  public:
+    public:
     /**
      * This will hold the function pointer
      */
@@ -106,7 +106,7 @@ namespace aicore
    */
   class ActionPtr : public aicore::DecisionTreeAction
   {
-  public:
+    public:
     /**
      * This will hold the function pointer
      */
@@ -115,21 +115,21 @@ namespace aicore
   
   class DecisionTrees
   {
-  public:
+    public:
     static void init();
     // Holds our list of decisions
     
-    static DecisionPtr doUpdateMotionDecisions[4];
-    // Holds our list of actions
-    static ActionPtr doUpdateMotionActions[5];
+    static DecisionPtr doUpdateMotionDecisions[5];
+    static ActionPtr doUpdateMotionActions[6];
     
     static DecisionPtr shootingDecisions[7];
-    
     static ActionPtr shootingActions[3];
     
-    static DecisionPtr holdingFlagDecisions[6];
-    
+    static DecisionPtr holdingFlagDecisions[9];
     static ActionPtr holdingFlagActions[2];
+    
+    static DecisionPtr targetFlagDecisions[3];
+    static ActionPtr targetFlagActions[3];
   };
   
 }; // end of namespace
